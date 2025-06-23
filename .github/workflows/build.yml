@@ -10,7 +10,7 @@ on:
 
 # Set anki-sync-server version
 env:
-  anki_version: "25.02.6"
+  anki_version: "25.02.7"
 
 # Enable SSH access to workflow
 #- name: Setup interactive ssh session
