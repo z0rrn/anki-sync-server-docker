@@ -78,7 +78,7 @@ jobs:
           cargo build --release --target ${{ matrix.rust_target }} --package anki-sync-server
 
       - name: Upload binary as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: anki-sync-server-${{ matrix.docker_platform }}
           path: ${{ github.workspace }}/ankitects-anki/target/${{ matrix.rust_target }}/release/anki-sync-server
