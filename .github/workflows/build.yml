@@ -122,7 +122,7 @@ jobs:
       - name: Downloads all artifacts
         # Downloads to ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}
         # So executable at ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}/anki-sync-server
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           path: ${{ github.workspace }}/target
 
