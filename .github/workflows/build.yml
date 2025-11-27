@@ -46,7 +46,7 @@ jobs:
             docker_platform: linux-armv7
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: mikefarah/yq@v4
       - uses: arduino/setup-protoc@v3
         with:
@@ -61,7 +61,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Clone ankitects/anki repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: ankitects/anki
           ref: ${{ env.anki_version }}
@@ -95,7 +95,7 @@ jobs:
       packages: write
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
