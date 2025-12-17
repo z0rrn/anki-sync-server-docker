@@ -10,7 +10,9 @@ Docker image for [Anki Sync Server](https://apps.ankiweb.net/).
 This image is available for following architectures:
 
 - linux/amd64
+- linux/386
 - linux/arm64
+- linux/arm/v7
 
 The container and the actions are auto-updated whenever a new version of anki is released. This is done by a GitHub Action and I can forget this project exists :).
 
