@@ -1,25 +1,26 @@
-name: "Build and push image"
+name: Build and push image
 
 on:
+  pull_request:
   push:
-    # don't build if only docs changed
+    # Don't build if only docs changed
     paths-ignore:
       - "**.md"
-  pull_request:
   workflow_dispatch:
+    inputs:
+      ssh_session:
+        description: "Enable interactive SSH debugging session"
+        type: boolean
+        required: false
+        default: false
 
 # Set anki-sync-server version
 env:
   anki_version: "25.09.2"
 
-# Enable SSH access to workflow
-#- name: Setup interactive ssh session
-#  uses: Warpbuilds/action-debugger@v1.3
-
 jobs:
   build-packages:
-    name: "Build packages"
-
+    name: Build packages
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -46,65 +47,73 @@ jobs:
             docker_platform: linux-armv7
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: mikefarah/yq@v4
-      - uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install C Compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install ${{ matrix.c_compiler }}
-
-      - name: Install Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Clone ankitects/anki repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: ankitects/anki
           ref: ${{ env.anki_version }}
           path: ankitects-anki
           submodules: true
 
+      - uses: mikefarah/yq@065b200af9851db0d5132f50bc10b1406ea5c0a8 # v4.50.1
+
+      - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@1780873c7b576612439a134613cc4cc74ce5538c # v1.15.2
+
+      - name: Install C Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install ${{ matrix.c_compiler }}
+
       # Install rust target in build directory (idk but otherwise it's not found)
       - name: Build anki-sync-server with release profile
+        working-directory: ./ankitects-anki
         run: |
-          cd ${{ github.workspace }}/ankitects-anki/
           rustup target add ${{ matrix.rust_target }}
+
           ${{ matrix.cargo_linker_env }} PROTOC=$(which protoc) \
           RUSTFLAGS='-C target-feature=+crt-static' \
           cargo build --release --target ${{ matrix.rust_target }} --package anki-sync-server
 
       - name: Upload binary as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: anki-sync-server-${{ matrix.docker_platform }}
           path: ${{ github.workspace }}/ankitects-anki/target/${{ matrix.rust_target }}/release/anki-sync-server
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 1
+
+      # Enable ssh debugging of manually-triggered workflows if the input option was provided
+      - name: Setup interactive ssh session
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.ssh_session }}
+        uses: Warpbuilds/action-debugger@4f5fd557c0ec91cdf9395b2853a3387b6cfd0738 # v1.3
+        timeout-minutes: 20
+        with:
+          limit-access-to-actor: true
 
   build-and-push-image:
-    name: "Build and push Docker image"
+    name: Build and push Docker image
     needs: [build-packages]
-
     runs-on: ubuntu-24.04
 
     permissions:
-      packages: write
+      contents: read # Normally added by default to checkout code
+      packages: write # Publish packages
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
@@ -112,7 +121,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         if: github.event_name != 'pull_request' && github.ref_name == 'main'
         with:
           registry: docker.io
@@ -122,13 +131,13 @@ jobs:
       - name: Downloads all artifacts
         # Downloads to ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}
         # So executable at ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}/anki-sync-server
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           path: ${{ github.workspace }}/target
 
       - name: Docker get Metadata
         id: metadata
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: |
             ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'ghcr.io/z0rrn/anki-sync-server' || 'ghcr.io/z0rrn/dev-anki-sync-server' }}
@@ -153,14 +162,20 @@ jobs:
             org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
             org.opencontainers.image.revision={{sha}}
             org.opencontainers.image.version=${{ env.anki_version }}
-        env:
-          DOCKER_METADATA_SHORT_SHA_LENGTH: 12
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
+
+      # Enable ssh debugging of manually-triggered workflows if the input option was provided
+      - name: Setup interactive ssh session
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.ssh_session }}
+        uses: Warpbuilds/action-debugger@4f5fd557c0ec91cdf9395b2853a3387b6cfd0738 # v1.3
+        timeout-minutes: 20
+        with:
+          limit-access-to-actor: true

@@ -7,7 +7,7 @@ Docker image for [Anki Sync Server](https://apps.ankiweb.net/).
 
 ## Information
 
-This image is  available for following architectures:
+This image is available for following architectures:
 
 - linux/amd64
 - linux/arm64
@@ -16,7 +16,7 @@ The container and the actions are auto-updated whenever a new version of anki is
 
 You can find this image on [GHCR](https://github.com/z0rrn/anki-sync-server-docker/pkgs/container/anki-sync-server) and on [Docker Hub](https://hub.docker.com/r/zorrn/anki-sync-server).
 
-Available tags for production:
+Available tags:
 
 - `latest`: Latest version of anki.
 - `<anki version>`: Specified version of anki.
@@ -31,7 +31,7 @@ services:
   # https://github.com/z0rrn/anki-sync-server-docker
   anki-sync-server:
     image: ghcr.io/z0rrn/anki-sync-server:25.02
-    # these are sample passwords, please change them
+    # These are sample passwords, please change them
     environment:
       - SYNC_USER1=panda:rsfPz4NXELBxmJ
       - SYNC_USER2=penguin:2Qtf5nnsDpsQ3b
@@ -44,11 +44,9 @@ volumes:
   anki-sync-server:
 ```
 
-Set SYNC_USERX (more users are possible) to your desired username and password and open port 27701 in your reverse-proxy or firewall.
+Set SYNC_USERX (more users are possible) to your desired username and password and open port 27701 in your reverse proxy or firewall.
 
 **For more configuration options see <https://docs.ankiweb.net/sync-server.html>**
-
-If you know how to configure a reverse-proxy please open an issue/pull request.
 
 ## Contributing & License
 
