@@ -25,8 +25,6 @@ jobs:
         with:
           token: ${{ secrets.GH_UPDATE_ANKI }}
 
-      - uses: mikefarah/yq@065b200af9851db0d5132f50bc10b1406ea5c0a8 # v4.50.1
-
       - name: Get current anki-sync-server version
         id: get-current
         run: |
