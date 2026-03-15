@@ -61,7 +61,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions-rust-lang/setup-rust-toolchain@a0b538fa0b742a6aa35d6e2c169b4bd06d225a98 # v1.15.3
+      - uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
 
       - name: Install C Compiler
         run: |
@@ -129,7 +129,7 @@ jobs:
       - name: Downloads all artifacts
         # Downloads to ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}
         # So executable at ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}/anki-sync-server
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: ${{ github.workspace }}/target
 
