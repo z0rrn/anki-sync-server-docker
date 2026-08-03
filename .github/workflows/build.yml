@@ -16,7 +16,7 @@ on:
 
 # Set anki-sync-server version
 env:
-  anki_version: "26.05"
+  anki_version: "26.08"
 
 jobs:
   build-packages:
