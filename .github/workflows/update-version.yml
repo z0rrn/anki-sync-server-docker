@@ -28,7 +28,7 @@ jobs:
       - name: Get current anki-sync-server version
         id: get-current
         run: |
-          echo "version=$(yq '.env.anki_version' ./.github/workflows/build.yml)" >> $GITHUB_OUTPUT
+          echo "version=$(cat ./anki-version)" >> $GITHUB_OUTPUT
 
       - name: Fetch GH API and get tag_name from latest release
         id: get-latest
@@ -43,16 +43,16 @@ jobs:
           # set output for later use
           echo "version=$tag_name" >> $GITHUB_OUTPUT
 
-      - name: Set new anki_version
+      - name: Set new Anki version
         if: ${{ steps.get-current.outputs.version != steps.get-latest.outputs.version }}
         run: |
-          sed -i -E "s/^([[:space:]]*anki_version:[[:space:]]*\")[^\"]*(\")/\1${{ steps.get-latest.outputs.version }}\2/" ./.github/workflows/build.yml
+          printf '%s\n' '${{ steps.get-latest.outputs.version }}' > ./anki-version
 
       - name: Set up git email/name and commit changes
         if: ${{ steps.get-current.outputs.version != steps.get-latest.outputs.version }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ./.github/workflows/build.yml
+          git add ./anki-version
           git commit -m "Bump Anki from v${{ steps.get-current.outputs.version }} to v${{ steps.get-latest.outputs.version }}"
           git push origin main

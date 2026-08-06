@@ -2,10 +2,11 @@ name: Build and push image
 
 on:
   pull_request:
+    paths:
+      - "anki-version"
   push:
-    # Don't build if only docs changed
-    paths-ignore:
-      - "**.md"
+    paths:
+      - "anki-version"
   workflow_dispatch:
     inputs:
       ssh_session:
@@ -14,144 +15,151 @@ on:
         required: false
         default: false
 
-# Set anki-sync-server version
-env:
-  anki_version: "26.08"
-
 jobs:
-  build-packages:
-    name: Build packages
-    runs-on: ${{ matrix.os }}
+  build-platform-image:
+    name: Build ${{ matrix.platform }} image
+    runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
-            rust_target: x86_64-unknown-linux-gnu
-            c_compiler: gcc g++
-            cargo_linker_env: NOTHING=nothing
-            docker_platform: linux-amd64
-          - os: ubuntu-24.04
-            rust_target: i686-unknown-linux-gnu
-            c_compiler: gcc-i686-linux-gnu g++-i686-linux-gnu
-            cargo_linker_env: CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER=i686-linux-gnu-gcc
-            docker_platform: linux-386
-          - os: ubuntu-24.04
-            rust_target: aarch64-unknown-linux-gnu
-            c_compiler: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-            cargo_linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            docker_platform: linux-arm64
-          - os: ubuntu-24.04
-            rust_target: armv7-unknown-linux-gnueabihf
-            c_compiler: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-            cargo_linker_env: CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-            docker_platform: linux-armv7
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Clone ankitects/anki repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ankitects/anki
-          ref: ${{ env.anki_version }}
-          path: ankitects-anki
-          submodules: true
-
-      - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
-
-      - name: Install C Compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install ${{ matrix.c_compiler }}
-
-      # Install rust target in build directory (idk but otherwise it's not found)
-      - name: Build anki-sync-server with release profile
-        working-directory: ./ankitects-anki
-        run: |
-          rustup target add ${{ matrix.rust_target }}
-
-          ${{ matrix.cargo_linker_env }} PROTOC=$(which protoc) \
-          RUSTFLAGS='-C target-feature=+crt-static' \
-          cargo build --release --target ${{ matrix.rust_target }} --package anki-sync-server
-
-      - name: Upload binary as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: anki-sync-server-${{ matrix.docker_platform }}
-          path: ${{ github.workspace }}/ankitects-anki/target/${{ matrix.rust_target }}/release/anki-sync-server
-          if-no-files-found: error
-          retention-days: 1
-
-      # Enable ssh debugging of manually-triggered workflows if the input option was provided
-      - name: Setup interactive ssh session
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.ssh_session }}
-        uses: Warpbuilds/action-debugger@4f5fd557c0ec91cdf9395b2853a3387b6cfd0738 # v1.3
-        timeout-minutes: 20
-        with:
-          limit-access-to-actor: true
-
-  build-and-push-image:
-    name: Build and push Docker image
-    needs: [build-packages]
-    runs-on: ubuntu-24.04
+          - platform: linux/amd64
+            tag_suffix: amd64
+            runner: ubuntu-24.04
+          - platform: linux/386
+            tag_suffix: 386
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            tag_suffix: arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux/arm/v7
+            tag_suffix: armv7
+            runner: ubuntu-24.04
 
     permissions:
-      contents: read # Normally added by default to checkout code
-      packages: write # Needed to push to GitHub Container Registry (use if github.ref != 'refs/heads/main')
+      contents: read
+      packages: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - name: Read Anki version
+        id: anki_version
+        run: echo "version=$(cat ./anki-version)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Login to GitHub Container Registry
+        if: github.event_name == 'push'
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
-        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: f7zorn
           password: ${{ github.ref == 'refs/heads/main' && secrets.GH_PUSH_GHCR_ANKI || secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref_name == 'main'
         uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
         with:
           registry: docker.io
           username: zorrn
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Downloads all artifacts
-        # Downloads to ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}
-        # So executable at ${{ github.workspace }}/target/anki-sync-server-${{ matrix.docker_platform }}/anki-sync-server
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          path: ${{ github.workspace }}/target
-
-      - name: Docker get Metadata
+      - name: Docker get metadata
         id: metadata
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
-            ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'ghcr.io/f7zorn/anki-sync-server' || 'ghcr.io/f7zorn/anki-sync-server-dev' }}
-            ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'ghcr.io/z0rrn/anki-sync-server' || '' }}
-            ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'docker.io/zorrn/anki-sync-server' || '' }}
+            ${{ (github.event_name == 'pull_request' || github.ref != 'refs/heads/main') && 'ghcr.io/f7zorn/anki-sync-server-dev' || 'ghcr.io/f7zorn/anki-sync-server' }}
+            ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'ghcr.io/z0rrn/anki-sync-server' || '' }}
+            ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'docker.io/zorrn/anki-sync-server' || '' }}
           flavor: |
             latest=false
-            prefix=${{ github.event_name == 'pull_request' && format('pr-{0}-', github.event.number) || (github.ref_name != 'main' && format('branch-{0}-', github.ref_name) || '') }}
+          tags: |
+            type=raw,value=build-${{ github.run_id }}-${{ matrix.tag_suffix }}
+          labels: |
+            org.opencontainers.image.title=Anki Sync Server
+            org.opencontainers.image.url=https://github.com/f7zorn/anki-sync-server-docker
+            org.opencontainers.image.description=Anki Sync Server is a third-party image that provides a server for syncing Anki decks.
+            org.opencontainers.image.source=https://github.com/f7zorn/anki-sync-server-docker
+            org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
+            org.opencontainers.image.revision={{sha}}
+            org.opencontainers.image.version=${{ steps.anki_version.outputs.version }}
+
+      - name: Build platform image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: ${{ github.event_name == 'push' }}
+          build-args: |
+            ANKI_VERSION=${{ steps.anki_version.outputs.version }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=build-${{ matrix.tag_suffix }}
+          cache-to: type=gha,mode=max,scope=build-${{ matrix.tag_suffix }}
+
+      # Enable ssh debugging of manually-triggered workflows if the input option was provided
+      - name: Setup interactive ssh session
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.ssh_session }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 20
+        with:
+          limit-access-to-actor: true
+
+  publish-multi-arch-image:
+    name: Publish multi-arch image
+    if: github.event_name == 'push'
+    needs: [build-platform-image]
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read Anki version
+        id: anki_version
+        run: echo "version=$(cat ./anki-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: f7zorn
+          password: ${{ github.ref == 'refs/heads/main' && secrets.GH_PUSH_GHCR_ANKI || secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: github.ref_name == 'main'
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: docker.io
+          username: zorrn
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Docker get final metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: |
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/f7zorn/anki-sync-server' || 'ghcr.io/f7zorn/anki-sync-server-dev' }}
+            ${{ github.ref == 'refs/heads/main' && 'ghcr.io/z0rrn/anki-sync-server' || '' }}
+            ${{ github.ref == 'refs/heads/main' && 'docker.io/zorrn/anki-sync-server' || '' }}
+          flavor: |
+            latest=false
+            prefix=${{ github.ref_name != 'main' && format('branch-{0}-', github.ref_name) || '' }}
           tags: |
             # latest tag for default branch
             type=raw,value=latest,enable={{is_default_branch}},priority=950
             # anki version
-            type=raw,value=${{ env.anki_version }},priority=900
+            type=raw,value=${{ steps.anki_version.outputs.version }},priority=900
             # git commit hash (12 characters)
             type=sha
-            # pr tag/number
+            # pr tag/number (kept for consistency with the previous tag scheme)
             type=ref,event=pr
           labels: |
             org.opencontainers.image.title=Anki Sync Server
@@ -160,21 +168,48 @@ jobs:
             org.opencontainers.image.source=https://github.com/f7zorn/anki-sync-server-docker
             org.opencontainers.image.created={{commit_date 'YYYY-MM-DDTHH:mm:ss.SSS[Z]'}}
             org.opencontainers.image.revision={{sha}}
-            org.opencontainers.image.version=${{ env.anki_version }}
+            org.opencontainers.image.version=${{ steps.anki_version.outputs.version }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
+      - name: Publish one manifest for each final tag
+        env:
+          FINAL_TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          set -eu
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+
+            case "$tag" in
+              ghcr.io/f7zorn/anki-sync-server:*)
+                image='ghcr.io/f7zorn/anki-sync-server'
+                ;;
+              ghcr.io/f7zorn/anki-sync-server-dev:*)
+                image='ghcr.io/f7zorn/anki-sync-server-dev'
+                ;;
+              ghcr.io/z0rrn/anki-sync-server:*)
+                image='ghcr.io/z0rrn/anki-sync-server'
+                ;;
+              docker.io/zorrn/anki-sync-server:*)
+                image='docker.io/zorrn/anki-sync-server'
+                ;;
+              *)
+                echo "Unexpected metadata tag: $tag" >&2
+                exit 1
+                ;;
+            esac
+
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "$image:build-${GITHUB_RUN_ID}-amd64" \
+              "$image:build-${GITHUB_RUN_ID}-386" \
+              "$image:build-${GITHUB_RUN_ID}-arm64" \
+              "$image:build-${GITHUB_RUN_ID}-armv7"
+          done <<< "$FINAL_TAGS"
 
       # Enable ssh debugging of manually-triggered workflows if the input option was provided
       - name: Setup interactive ssh session
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.ssh_session }}
-        uses: Warpbuilds/action-debugger@4f5fd557c0ec91cdf9395b2853a3387b6cfd0738 # v1.3
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
         timeout-minutes: 20
         with:
           limit-access-to-actor: true
